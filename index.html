@@ -631,23 +631,43 @@
 
     <div class="sliders">
       <div class="slider-block">
-        <label>Average job value <span class="val" id="job-value-display">$8,000</span></label>
+        <label>Average sale value <span class="val" id="job-value-display">$8,000</span></label>
         <input type="range" id="job-value" min="500" max="50000" step="100" value="8000">
         <div class="range-labels"><span>$500</span><span>$50,000</span></div>
       </div>
       <div class="slider-block">
-        <label>New jobs wanted per month <span class="val" id="jobs-wanted-display">3</span></label>
-        <input type="range" id="jobs-wanted" min="1" max="20" step="1" value="3">
-        <div class="range-labels"><span>1</span><span>20</span></div>
+        <label>Gross margin <span class="val" id="margin-display">40%</span></label>
+        <input type="range" id="gross-margin" min="5" max="100" step="1" value="40">
+        <div class="range-labels"><span>5%</span><span>100%</span></div>
+      </div>
+      <div class="slider-block">
+        <label>Close ratio <span class="val" id="close-ratio-display">30%</span></label>
+        <input type="range" id="close-ratio" min="1" max="100" step="1" value="30">
+        <div class="range-labels"><span>1%</span><span>100%</span></div>
+      </div>
+      <div class="slider-block">
+        <label>New sales wanted per month <span class="val" id="jobs-wanted-display">3</span></label>
+        <input type="range" id="jobs-wanted" min="1" max="100" step="1" value="3">
+        <div class="range-labels"><span>1</span><span>100</span></div>
+      </div>
+      <div class="slider-block">
+        <label>Target return <span class="val" id="target-return-display">5x</span></label>
+        <input type="range" id="target-return" min="1" max="20" step="1" value="5">
+        <div class="range-labels"><span>1x</span><span>20x</span></div>
       </div>
     </div>
 
     <div class="results" id="results">
       <div class="tile"><div class="num" id="r-monthly">--</div><div class="lbl">Monthly investment</div></div>
       <div class="tile"><div class="num" id="r-annual">--</div><div class="lbl">Annual investment</div></div>
-      <div class="tile"><div class="num" id="r-breakeven">--</div><div class="lbl">Jobs/mo to break even</div></div>
+      <div class="tile"><div class="num" id="r-breakeven">--</div><div class="lbl">Sales/mo to break even</div></div>
       <div class="tile"><div class="num" id="r-payback">--</div><div class="lbl">Payback period</div></div>
       <div class="tile" id="tile-return"><div class="num" id="r-return">--</div><div class="lbl">12-month net return</div></div>
+    </div>
+
+    <div class="builder-intro" style="margin-top: 8px;">Leads needed for target return</div>
+    <div class="results" id="leads-results">
+      <div class="tile"><div class="num" id="r-leads-target">--</div><div class="lbl" id="r-leads-target-lbl">Leads for 5x return</div></div>
     </div>
 
     <div class="summary-bar">
@@ -658,7 +678,7 @@
   </div>
 
   <div class="panel-footer">
-    Pricing reflects current published rates. Figures are estimates for discussion purposes and not a guarantee of results.
+    Pricing reflects current published rates. All returns are calculated on gross profit (sale value &times; gross margin), not raw revenue. Figures are estimates for discussion purposes and not a guarantee of results.
   </div>
 </section>
 
@@ -872,9 +892,15 @@
     });
 
     const jobValueSlider = document.getElementById('job-value');
+    const grossMarginSlider = document.getElementById('gross-margin');
+    const closeRatioSlider = document.getElementById('close-ratio');
     const jobsWantedSlider = document.getElementById('jobs-wanted');
+    const targetReturnSlider = document.getElementById('target-return');
     const jobValueDisplay = document.getElementById('job-value-display');
+    const marginDisplay = document.getElementById('margin-display');
+    const closeRatioDisplay = document.getElementById('close-ratio-display');
     const jobsWantedDisplay = document.getElementById('jobs-wanted-display');
+    const targetReturnDisplay = document.getElementById('target-return-display');
 
     SERVICES.forEach(service => selectTier(service.key, -1));
 
@@ -883,10 +909,23 @@
     }
 
     function calculate() {
-      const jobValue = parseFloat(jobValueSlider.value);
-      const jobsWanted = parseFloat(jobsWantedSlider.value);
-      jobValueDisplay.textContent = fmtCurrency(jobValue);
-      jobsWantedDisplay.textContent = jobsWanted;
+      const saleValue = parseFloat(jobValueSlider.value);
+      const grossMarginPct = parseFloat(grossMarginSlider.value) / 100;
+      const closeRatioPct = parseFloat(closeRatioSlider.value) / 100;
+      const salesWanted = parseFloat(jobsWantedSlider.value);
+
+      jobValueDisplay.textContent = fmtCurrency(saleValue);
+      marginDisplay.textContent = grossMarginSlider.value + '%';
+      closeRatioDisplay.textContent = closeRatioSlider.value + '%';
+      jobsWantedDisplay.textContent = salesWanted;
+      const targetMultiple = parseFloat(targetReturnSlider.value);
+      targetReturnDisplay.textContent = targetMultiple + 'x';
+      document.getElementById('r-leads-target-lbl').textContent = 'Leads for ' + targetMultiple + 'x return';
+
+      // Gross profit per sale is the actual money available to cover
+      // marketing cost -- using raw sale value here would overstate
+      // returns by ignoring cost of goods / delivery cost.
+      const grossProfitPerSale = saleValue * grossMarginPct;
 
       let monthlyInvestment = 0;
       const selectedChips = [];
@@ -906,20 +945,26 @@
       document.getElementById('r-monthly').textContent = fmtCurrency(monthlyInvestment);
       document.getElementById('r-annual').textContent = fmtCurrency(annualInvestment);
 
-      if (!anySelected) {
+      const leadsTargetId = 'r-leads-target';
+
+      if (!anySelected || grossProfitPerSale <= 0) {
         document.getElementById('r-breakeven').textContent = '--';
         document.getElementById('r-payback').textContent = '--';
         document.getElementById('r-return').textContent = '--';
         document.getElementById('tile-return').classList.remove('positive', 'negative');
+        document.getElementById(leadsTargetId).textContent = '--';
       } else {
-        const breakevenJobs = monthlyInvestment / jobValue;
+        // Sales needed per month to break even = investment / gross profit per sale
+        const breakevenSales = monthlyInvestment / grossProfitPerSale;
         document.getElementById('r-breakeven').textContent =
-          (Math.ceil(breakevenJobs * 10) / 10).toFixed(1);
+          (Math.ceil(breakevenSales * 10) / 10).toFixed(1);
 
-        const monthlyRevenue = jobsWanted * jobValue;
-        const paybackMonths = monthlyInvestment / monthlyRevenue;
+        // Payback period: how long it takes gross profit at the target
+        // sales volume to cover the monthly investment.
+        const monthlyGrossProfit = salesWanted * grossProfitPerSale;
+        const paybackMonths = monthlyInvestment / monthlyGrossProfit;
         let paybackText;
-        if (monthlyRevenue <= 0) {
+        if (monthlyGrossProfit <= 0) {
           paybackText = 'N/A';
         } else if (paybackMonths < 1) {
           const days = Math.max(1, Math.round(paybackMonths * 30));
@@ -929,13 +974,24 @@
         }
         document.getElementById('r-payback').textContent = paybackText;
 
-        const annualRevenue = monthlyRevenue * 12;
-        const netReturn = annualRevenue - annualInvestment;
+        // 12-month net return, based on gross profit (not raw revenue)
+        const annualGrossProfit = monthlyGrossProfit * 12;
+        const netReturn = annualGrossProfit - annualInvestment;
         const returnTile = document.getElementById('tile-return');
         const returnEl = document.getElementById('r-return');
         returnEl.textContent = (netReturn >= 0 ? '+' : '-') + fmtCurrency(Math.abs(netReturn));
         returnTile.classList.remove('positive', 'negative');
         returnTile.classList.add(netReturn >= 0 ? 'positive' : 'negative');
+
+        // Leads needed for the rep-selected target return multiple:
+        // requiredGrossProfit = investment x targetMultiple
+        // requiredSales = requiredGrossProfit / grossProfitPerSale
+        // requiredLeads = requiredSales / closeRatio, rounded up to a whole lead
+        const requiredGrossProfit = monthlyInvestment * targetMultiple;
+        const requiredSales = requiredGrossProfit / grossProfitPerSale;
+        const requiredLeads = closeRatioPct > 0 ? requiredSales / closeRatioPct : Infinity;
+        document.getElementById(leadsTargetId).textContent =
+          isFinite(requiredLeads) ? Math.ceil(requiredLeads).toLocaleString() : '--';
       }
 
       const chipsEl = document.getElementById('summary-chips');
@@ -957,7 +1013,10 @@
     }
 
     jobValueSlider.addEventListener('input', calculate);
+    grossMarginSlider.addEventListener('input', calculate);
+    closeRatioSlider.addEventListener('input', calculate);
     jobsWantedSlider.addEventListener('input', calculate);
+    targetReturnSlider.addEventListener('input', calculate);
 
     calculate();
   })();
